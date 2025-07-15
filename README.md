@@ -74,6 +74,15 @@ The system uses in-memory storage (`storage.js`) that mimics Redis functionality
 
 **Note:** Data is stored in memory and will be reset when the server restarts. For production use, consider integrating with a persistent database like MongoDB or PostgreSQL.
 
-## Sample Questions
+## GPU Training Quiz
 
-The system includes 5 sample questions covering general knowledge. Questions and answers are stored in memory and can be easily modified in the server.js file.
+The system includes 30 comprehensive questions covering GPU training topics:
+- Mixed precision training (BF16/FP16 vs FP32)
+- Distributed training parallelism strategies
+- ZeRO optimization techniques
+- Memory management and optimization
+- Communication patterns in distributed systems
+- Tensor, Pipeline, Data, and Sequence Parallelism
+- Expert Parallelism and mixture-of-experts models
+
+Questions and answers are stored in memory and can be easily modified in the server.js file.
