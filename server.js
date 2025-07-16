@@ -22,9 +22,6 @@ client.on('error', (err) => {
 
 client.connect();
 
-// Export for external use
-module.exports.sampleQuestions = sampleQuestions;
-
 const sampleQuestions = [
   {
     id: 1,
@@ -207,6 +204,9 @@ const sampleQuestions = [
     correct: 1
   }
 ];
+
+// Export for external use
+module.exports.sampleQuestions = sampleQuestions;
 
 app.post('/api/register', async (req, res) => {
   const { username } = req.body;
