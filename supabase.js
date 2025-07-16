@@ -30,8 +30,18 @@ class SupabaseStorage {
     }
   }
 
-  async createUser(username) {
+  async createOrGetUser(username) {
     if (!this.client) {
+      // Check if user exists in fallback
+      const userIds = await this.fallbackClient.sMembers('users');
+      for (const userId of userIds) {
+        const userData = await this.fallbackClient.hGetAll(`user:${userId}`);
+        if (userData.username === username) {
+          return { id: userId, username: userData.username };
+        }
+      }
+      
+      // Create new user if not found
       const userId = require('uuid').v4();
       await this.fallbackClient.hSet(`user:${userId}`, {
         id: userId,
@@ -44,6 +54,18 @@ class SupabaseStorage {
       return { id: userId, username };
     }
 
+    // Check if user exists in Supabase
+    const { data: existingUser } = await this.client
+      .from('users')
+      .select('*')
+      .eq('username', username)
+      .single();
+
+    if (existingUser) {
+      return existingUser;
+    }
+
+    // Create new user
     const { data, error } = await this.client
       .from('users')
       .insert([{ username }])

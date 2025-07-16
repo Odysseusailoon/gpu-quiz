@@ -205,8 +205,222 @@ const sampleQuestions = [
   }
 ];
 
+const advancedParallelismQuestions = [
+  {
+    id: 31,
+    question: "When overlapping gradient synchronization with the backward pass, what determines the optimal time to start the all-reduce operation?",
+    options: ["When all gradients are computed", "When the first layer's gradients are ready", "When enough gradients are accumulated to saturate network bandwidth", "At fixed time intervals"],
+    correct: 2,
+    explanation: "Starting all-reduce when enough gradients are ready to saturate network bandwidth maximizes overlap efficiency. Starting too early with few gradients underutilizes bandwidth, while waiting too long reduces overlap opportunity."
+  },
+  {
+    id: 32,
+    question: "In gradient bucketing, what is the primary trade-off when choosing bucket size?",
+    options: ["Memory usage vs computation speed", "Communication latency vs bandwidth utilization", "Model accuracy vs training speed", "Forward pass time vs backward pass time"],
+    correct: 1,
+    explanation: "Smaller buckets reduce latency (can start sending earlier) but may underutilize bandwidth. Larger buckets better saturate bandwidth but increase waiting time before communication can start."
+  },
+  {
+    id: 33,
+    question: "How does gradient accumulation interact with the overlapping of gradient synchronization in data parallelism?",
+    options: ["It prevents any overlap from occurring", "It allows synchronization to happen less frequently, reducing communication overhead", "It doubles the required bandwidth", "It requires synchronization after every micro-batch"],
+    correct: 1,
+    explanation: "Gradient accumulation means synchronization only happens after multiple micro-batches, reducing communication frequency and allowing better amortization of communication costs."
+  },
+  {
+    id: 34,
+    question: "When using gradient accumulation with data parallelism, what is the relationship between global batch size, micro-batch size, and gradient accumulation steps?",
+    options: ["Global batch size = micro-batch size × gradient accumulation steps", "Global batch size = micro-batch size × gradient accumulation steps × number of GPUs", "Global batch size = micro-batch size × number of GPUs", "Global batch size = gradient accumulation steps × number of GPUs"],
+    correct: 1,
+    explanation: "Each GPU processes micro-batches, accumulates gradients over multiple steps, and this happens across all GPUs in parallel, so all three factors multiply together."
+  },
+  {
+    id: 35,
+    question: "In ZeRO-1, if you have 8 GPUs and optimizer states that normally take 48GB, how much optimizer memory does each GPU use?",
+    options: ["48GB", "24GB", "12GB", "6GB"],
+    correct: 3,
+    explanation: "ZeRO-1 partitions optimizer states across all data parallel ranks. With 8 GPUs, each stores 1/8th of the optimizer states: 48GB ÷ 8 = 6GB."
+  },
+  {
+    id: 36,
+    question: "What additional communication is required in ZeRO-2 compared to ZeRO-1 during the backward pass?",
+    options: ["All-gather of parameters", "Reduce-scatter of gradients", "All-reduce of gradients", "Broadcast of optimizer states"],
+    correct: 1,
+    explanation: "ZeRO-2 adds gradient partitioning, requiring reduce-scatter to sum gradients while distributing different portions to different GPUs, unlike standard DP which uses all-reduce."
+  },
+  {
+    id: 37,
+    question: "In ZeRO-3, when must parameters be gathered from other GPUs?",
+    options: ["Only during the forward pass", "Only during the backward pass", "Both during forward and backward passes", "Only during optimizer step"],
+    correct: 2,
+    explanation: "ZeRO-3 partitions parameters, so each layer's parameters must be all-gathered before computing forward pass and again before computing gradients in backward pass."
+  },
+  {
+    id: 38,
+    question: "What is the key difference between ZeRO-3 and traditional model parallelism?",
+    options: ["ZeRO-3 requires more memory", "ZeRO-3 maintains full model replicas while partitioning for memory efficiency", "ZeRO-3 cannot scale beyond 8 GPUs", "ZeRO-3 doesn't support gradient accumulation"],
+    correct: 1,
+    explanation: "ZeRO-3 logically maintains data parallelism (each GPU processes different data) while physically partitioning model components for memory efficiency, unlike model parallelism which assigns different model parts to different GPUs."
+  },
+  {
+    id: 39,
+    question: "In tensor parallelism for a transformer's attention mechanism, how is the QKV projection typically split?",
+    options: ["Each GPU computes Q, K, or V entirely", "The hidden dimension is split across GPUs", "The sequence length is split across GPUs", "The batch dimension is split across GPUs"],
+    correct: 1,
+    explanation: "Tensor parallelism splits matrices along the hidden dimension, so each GPU computes a portion of Q, K, and V projections for all positions."
+  },
+  {
+    id: 40,
+    question: "What is the primary benefit of sequence parallelism when combined with tensor parallelism?",
+    options: ["It eliminates all communication", "It reduces activation memory by partitioning along sequence length", "It increases model accuracy", "It speeds up the optimizer step"],
+    correct: 1,
+    explanation: "Sequence parallelism partitions activations along the sequence dimension between tensor-parallel ranks, reducing per-GPU activation memory requirements."
+  },
+  {
+    id: 41,
+    question: "In tensor parallelism, why must the MLP's two linear layers be partitioned differently (column-wise vs row-wise)?",
+    options: ["To balance memory usage", "To maintain mathematical equivalence and avoid additional communication", "To improve numerical stability", "To support different activation functions"],
+    correct: 1,
+    explanation: "Column-wise partition of first layer and row-wise of second layer allows the intermediate results to remain distributed without requiring all-gather between them, maintaining correctness with minimal communication."
+  },
+  {
+    id: 42,
+    question: "In Ring Attention, what is the key insight that enables splitting attention computation across the sequence dimension?",
+    options: ["Attention scores can be computed independently", "Causal masking prevents dependencies", "Blockwise computation with proper normalization maintains correctness", "Queries and keys are independent"],
+    correct: 2,
+    explanation: "Ring Attention works by computing attention in blocks and using the log-sum-exp trick to correctly normalize attention scores across blocks computed on different devices."
+  },
+  {
+    id: 43,
+    question: "What problem does Zig-Zag Ring Attention solve compared to standard Ring Attention?",
+    options: ["Memory usage imbalance", "Computational load imbalance due to causal masking", "Communication overhead", "Gradient explosion"],
+    correct: 1,
+    explanation: "In causal attention with standard ring ordering, early GPUs process mostly masked positions (light computation) while later GPUs process full attention (heavy computation). Zig-Zag reorders to balance this."
+  },
+  {
+    id: 44,
+    question: "How does context parallelism differ from sequence parallelism in terms of implementation?",
+    options: ["Context parallelism requires modifications to attention computation", "They are the same thing", "Context parallelism only works with causal models", "Sequence parallelism requires ring communication"],
+    correct: 0,
+    explanation: "Context parallelism requires specialized algorithms (like Ring Attention) to correctly compute attention across split sequences, while sequence parallelism simply partitions activations between existing tensor-parallel ranks."
+  },
+  {
+    id: 45,
+    question: "In GPipe-style pipeline parallelism, what is the main source of inefficiency?",
+    options: ["Communication bandwidth", "Pipeline bubbles at the beginning and end of mini-batches", "Memory usage", "Gradient computation"],
+    correct: 1,
+    explanation: "Pipeline bubbles occur when GPUs wait for inputs from previous stages (startup) or when early stages finish and wait for backward pass (wind-down), creating idle time."
+  },
+  {
+    id: 46,
+    question: "How does the 1F1B (one forward, one backward) schedule improve upon GPipe?",
+    options: ["It eliminates all pipeline bubbles", "It reduces memory usage by processing gradients immediately", "It increases communication speed", "It allows larger models"],
+    correct: 1,
+    explanation: "1F1B interleaves forward and backward passes, allowing gradients to be computed and potentially released earlier, reducing peak activation memory compared to all-forward-then-all-backward."
+  },
+  {
+    id: 47,
+    question: "What is the key innovation in Zero Bubble pipeline parallelism?",
+    options: ["Eliminating communication between stages", "Overlapping computation with carefully scheduled warm-up and cool-down phases", "Using half precision for all computations", "Removing the need for gradient synchronization"],
+    correct: 1,
+    explanation: "Zero Bubble uses sophisticated scheduling with multiple backward pass types (B, B', W) to keep all GPUs busy throughout training, effectively eliminating idle time."
+  },
+  {
+    id: 48,
+    question: "In pipeline parallelism with interleaved stages, what is the primary benefit?",
+    options: ["Reduced communication per GPU", "Better load balancing and reduced bubble ratio", "Simplified implementation", "Lower memory usage"],
+    correct: 1,
+    explanation: "Interleaving assigns multiple non-consecutive layers to each GPU, creating more pipeline stages with the same number of GPUs, reducing the relative impact of bubbles."
+  },
+  {
+    id: 49,
+    question: "In expert parallelism for Mixture of Experts (MoE) models, what determines which GPU processes which tokens?",
+    options: ["Round-robin assignment", "The routing/gating network's output", "Static hash of token ID", "Random assignment"],
+    correct: 1,
+    explanation: "The routing network dynamically assigns tokens to experts based on the input, requiring all-to-all communication to send tokens to their assigned expert GPUs."
+  },
+  {
+    id: 50,
+    question: "What is the main challenge in achieving good performance with expert parallelism?",
+    options: ["Memory bandwidth limitations", "Load balancing across experts", "Gradient computation complexity", "Parameter initialization"],
+    correct: 1,
+    explanation: "If the router sends too many tokens to some experts and few to others, some GPUs become overloaded while others idle, creating inefficiency. Load balancing losses help but don't fully solve this."
+  },
+  {
+    id: 51,
+    question: "In 5D parallelism, which two dimensions must be carefully coordinated to avoid conflicts?",
+    options: ["Data and tensor parallelism", "Tensor and sequence parallelism", "Pipeline and expert parallelism", "Data and pipeline parallelism"],
+    correct: 1,
+    explanation: "Tensor and sequence parallelism both operate on the same tensor dimensions within a layer, requiring careful coordination to ensure they partition different aspects without conflict."
+  },
+  {
+    id: 52,
+    question: "When combining pipeline parallelism with tensor parallelism, what is the typical communication pattern?",
+    options: ["Communication only within pipeline stages", "Communication only between pipeline stages", "High-bandwidth communication within TP groups at each PP stage", "All-to-all communication across all GPUs"],
+    correct: 2,
+    explanation: "Each pipeline stage typically forms a tensor parallel group requiring high-bandwidth all-reduce/all-gather, while pipeline communication between stages is point-to-point and less demanding."
+  },
+  {
+    id: 53,
+    question: "What is the memory saving formula when combining ZeRO-3 with tensor parallelism degree T and pipeline parallelism degree P?",
+    options: ["Memory per GPU = Total memory ÷ T", "Memory per GPU = Total memory ÷ P", "Memory per GPU = Total memory ÷ (T × P)", "Memory per GPU = Total memory ÷ (T × P × DP_degree)"],
+    correct: 3,
+    explanation: "ZeRO-3 shards across data parallel dimension, while model is already divided by tensor and pipeline parallelism, so total reduction is the product of all three."
+  },
+  {
+    id: 54,
+    question: "In a cluster with limited inter-node bandwidth, which parallelism dimension should typically be within nodes?",
+    options: ["Data parallelism", "Tensor parallelism", "Pipeline parallelism", "Expert parallelism"],
+    correct: 1,
+    explanation: "Tensor parallelism requires frequent all-reduce communication with tight synchronization, making it sensitive to latency and bandwidth, so it should use the fastest intra-node connections."
+  },
+  {
+    id: 55,
+    question: "When using gradient accumulation with pipeline parallelism, how does it affect the bubble overhead?",
+    options: ["Reduces bubble overhead by amortizing it over more micro-batches", "Increases bubble overhead proportionally", "Has no effect on bubbles", "Eliminates bubbles entirely"],
+    correct: 0,
+    explanation: "With more micro-batches per gradient step, the fixed bubble time at batch boundaries becomes a smaller fraction of total compute time, improving efficiency."
+  },
+  {
+    id: 56,
+    question: "What is the optimal order for reducing gradients when combining ZeRO-2 with tensor parallelism?",
+    options: ["Reduce within TP groups first, then reduce-scatter across DP groups", "Reduce-scatter across DP groups first, then within TP groups", "Only reduce within TP groups", "Simultaneous reduction in both dimensions"],
+    correct: 0,
+    explanation: "Reducing within TP groups first produces the complete gradient for each TP group, which can then be efficiently reduce-scattered across DP dimension for ZeRO-2 partitioning."
+  },
+  {
+    id: 57,
+    question: "In context parallelism with Ring Attention, what determines the optimal block size for attention computation?",
+    options: ["Model dimension only", "Sequence length only", "Balance between computation granularity and communication frequency", "Number of attention heads"],
+    correct: 2,
+    explanation: "Smaller blocks mean more frequent communication but better load balancing, while larger blocks reduce communication but may cause imbalance and memory issues. The optimum balances these factors."
+  },
+  {
+    id: 58,
+    question: "When combining expert parallelism with data parallelism, how are gradients synchronized?",
+    options: ["Only within expert parallel groups", "Only within data parallel groups", "First within EP groups for each expert, then across DP groups", "All-to-all across all dimensions simultaneously"],
+    correct: 2,
+    explanation: "Each expert's gradients must first be reduced within its EP group (across GPUs handling the same expert), then synchronized across DP groups like normal data parallelism."
+  },
+  {
+    id: 59,
+    question: "What is the relationship between pipeline depth and the optimal number of micro-batches in 1F1B schedule?",
+    options: ["Micro-batches should equal pipeline depth", "Micro-batches should be at least 4× pipeline depth", "Micro-batches should be at most half pipeline depth", "They are independent"],
+    correct: 1,
+    explanation: "Having micro-batches ≥ 4× pipeline depth ensures the pipeline stays full during steady state, minimizing bubble overhead in the 1F1B schedule."
+  },
+  {
+    id: 60,
+    question: "In 5D parallelism, what is the most complex aspect of the implementation?",
+    options: ["Memory allocation", "Coordinating communication patterns and collective operations across all dimensions", "Computing gradients", "Loading data"],
+    correct: 1,
+    explanation: "Each parallelism dimension has its own communication requirements and patterns. Coordinating these to avoid deadlocks, ensure correctness, and maintain efficiency while managing different process groups is the primary implementation challenge."
+  }
+];
+
 // Export for external use
 module.exports.sampleQuestions = sampleQuestions;
+module.exports.advancedParallelismQuestions = advancedParallelismQuestions;
 
 app.post('/api/register', async (req, res) => {
   const { username } = req.body;
@@ -216,7 +430,7 @@ app.post('/api/register', async (req, res) => {
   }
   
   try {
-    const user = await client.createUser(username.trim());
+    const user = await client.createOrGetUser(username.trim());
     res.json({ userId: user.id, username: user.username });
   } catch (error) {
     console.error('Registration error:', error);
@@ -280,7 +494,8 @@ app.post('/api/submit', async (req, res) => {
         question: question.question_text,
         userAnswer,
         correctAnswer: question.correct_answer,
-        isCorrect
+        isCorrect,
+        explanation: question.explanation || null
       });
     });
     
