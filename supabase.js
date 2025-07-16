@@ -152,11 +152,18 @@ class SupabaseStorage {
 
     if (error) throw error;
 
+    // Update user stats
+    const { data: userData } = await this.client
+      .from('users')
+      .select('total_score, quizzes_completed')
+      .eq('id', userId)
+      .single();
+
     await this.client
       .from('users')
       .update({
-        total_score: this.client.sql`total_score + ${score}`,
-        quizzes_completed: this.client.sql`quizzes_completed + 1`
+        total_score: (userData?.total_score || 0) + score,
+        quizzes_completed: (userData?.quizzes_completed || 0) + 1
       })
       .eq('id', userId);
 
