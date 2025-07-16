@@ -1,9 +1,11 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
-const MemoryStorage = require('./storage');
+const multer = require('multer');
+const SupabaseStorage = require('./supabase');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -12,13 +14,16 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const client = new MemoryStorage();
+const client = new SupabaseStorage();
 
 client.on('error', (err) => {
   console.error('Storage Client Error:', err);
 });
 
 client.connect();
+
+// Export for external use
+module.exports.sampleQuestions = sampleQuestions;
 
 const sampleQuestions = [
   {
@@ -210,133 +215,191 @@ app.post('/api/register', async (req, res) => {
     return res.status(400).json({ error: 'Username is required' });
   }
   
-  const userId = uuidv4();
-  const userKey = `user:${userId}`;
-  
-  await client.hSet(userKey, {
-    id: userId,
-    username: username.trim(),
-    totalScore: 0,
-    quizzesCompleted: 0,
-    createdAt: new Date().toISOString()
-  });
-  
-  await client.sAdd('users', userId);
-  
-  res.json({ userId, username: username.trim() });
+  try {
+    const user = await client.createUser(username.trim());
+    res.json({ userId: user.id, username: user.username });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
 });
 
-app.get('/api/questions', (req, res) => {
-  const questionsWithoutAnswers = sampleQuestions.map(q => ({
-    id: q.id,
-    question: q.question,
-    options: q.options
-  }));
+app.get('/api/chapters', async (req, res) => {
+  try {
+    const chapters = await client.getChapters();
+    res.json(chapters);
+  } catch (error) {
+    console.error('Error fetching chapters:', error);
+    res.status(500).json({ error: 'Failed to fetch chapters' });
+  }
+});
+
+app.get('/api/questions/:chapterId', async (req, res) => {
+  const { chapterId } = req.params;
   
-  res.json(questionsWithoutAnswers);
+  try {
+    const questions = await client.getQuestionsByChapter(chapterId);
+    const questionsWithoutAnswers = questions.map(q => ({
+      id: q.id,
+      question: q.question_text,
+      options: q.options
+    }));
+    
+    res.json(questionsWithoutAnswers);
+  } catch (error) {
+    console.error('Error fetching questions:', error);
+    res.status(500).json({ error: 'Failed to fetch questions' });
+  }
 });
 
 app.post('/api/submit', async (req, res) => {
-  const { userId, answers } = req.body;
+  const { userId, chapterId, answers } = req.body;
   
-  if (!userId || !answers) {
-    return res.status(400).json({ error: 'User ID and answers are required' });
+  if (!userId || !chapterId || !answers) {
+    return res.status(400).json({ error: 'User ID, chapter ID, and answers are required' });
   }
   
-  const userKey = `user:${userId}`;
-  const userExists = await client.exists(userKey);
-  
-  if (!userExists) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-  
-  let score = 0;
-  const results = [];
-  
-  sampleQuestions.forEach(question => {
-    const userAnswer = answers[question.id];
-    const isCorrect = userAnswer === question.correct;
-    if (isCorrect) score++;
+  try {
+    const user = await client.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     
-    results.push({
-      questionId: question.id,
-      question: question.question,
-      userAnswer,
-      correctAnswer: question.correct,
-      isCorrect
+    const questions = await client.getQuestionsByChapter(chapterId);
+    
+    let score = 0;
+    const results = [];
+    
+    questions.forEach(question => {
+      const userAnswer = answers[question.id];
+      const isCorrect = userAnswer === question.correct_answer;
+      if (isCorrect) score++;
+      
+      results.push({
+        questionId: question.id,
+        question: question.question_text,
+        userAnswer,
+        correctAnswer: question.correct_answer,
+        isCorrect
+      });
     });
-  });
-  
-  const quizId = uuidv4();
-  const quizKey = `quiz:${quizId}`;
-  
-  await client.hSet(quizKey, {
-    id: quizId,
-    userId,
-    score,
-    totalQuestions: sampleQuestions.length,
-    answers: JSON.stringify(answers),
-    results: JSON.stringify(results),
-    completedAt: new Date().toISOString()
-  });
-  
-  const currentScore = await client.hGet(userKey, 'totalScore');
-  const currentQuizzes = await client.hGet(userKey, 'quizzesCompleted');
-  
-  await client.hSet(userKey, {
-    totalScore: parseInt(currentScore) + score,
-    quizzesCompleted: parseInt(currentQuizzes) + 1
-  });
-  
-  res.json({
-    score,
-    totalQuestions: sampleQuestions.length,
-    percentage: Math.round((score / sampleQuestions.length) * 100),
-    results
-  });
+    
+    await client.submitQuiz(userId, chapterId, score, questions.length, answers);
+    
+    res.json({
+      score,
+      totalQuestions: questions.length,
+      percentage: Math.round((score / questions.length) * 100),
+      results
+    });
+  } catch (error) {
+    console.error('Error submitting quiz:', error);
+    res.status(500).json({ error: 'Failed to submit quiz' });
+  }
 });
 
-app.get('/api/leaderboard', async (req, res) => {
-  const userIds = await client.sMembers('users');
-  const leaderboard = [];
+app.get('/api/leaderboard/chapter/:chapterId', async (req, res) => {
+  const { chapterId } = req.params;
+  const limit = parseInt(req.query.limit) || 10;
   
-  for (const userId of userIds) {
-    const userKey = `user:${userId}`;
-    const userData = await client.hGetAll(userKey);
-    
-    if (userData.username) {
-      leaderboard.push({
-        username: userData.username,
-        totalScore: parseInt(userData.totalScore) || 0,
-        quizzesCompleted: parseInt(userData.quizzesCompleted) || 0,
-        averageScore: userData.quizzesCompleted > 0 
-          ? Math.round((userData.totalScore / userData.quizzesCompleted) * 100) / 100
-          : 0
-      });
-    }
+  try {
+    const leaderboard = await client.getChapterLeaderboard(chapterId, limit);
+    res.json(leaderboard);
+  } catch (error) {
+    console.error('Error fetching chapter leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch chapter leaderboard' });
   }
+});
+
+app.get('/api/leaderboard/global', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 10;
   
-  leaderboard.sort((a, b) => b.totalScore - a.totalScore);
-  
-  res.json(leaderboard);
+  try {
+    const leaderboard = await client.getGlobalLeaderboard(limit);
+    res.json(leaderboard);
+  } catch (error) {
+    console.error('Error fetching global leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch global leaderboard' });
+  }
+});
+
+// Legacy endpoint for backward compatibility
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const leaderboard = await client.getGlobalLeaderboard(10);
+    res.json(leaderboard);
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
 });
 
 app.get('/api/user/:userId', async (req, res) => {
   const { userId } = req.params;
-  const userKey = `user:${userId}`;
   
-  const userData = await client.hGetAll(userKey);
+  try {
+    const user = await client.getUser(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      id: user.id,
+      username: user.username,
+      totalScore: user.total_score || 0,
+      quizzesCompleted: user.quizzes_completed || 0
+    });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+// Admin endpoints for creating chapters and uploading quizzes
+const upload = multer({ dest: 'uploads/' });
+
+app.post('/api/admin/chapter', async (req, res) => {
+  const { name, description } = req.body;
   
-  if (!userData.username) {
-    return res.status(404).json({ error: 'User not found' });
+  if (!name) {
+    return res.status(400).json({ error: 'Chapter name is required' });
   }
   
-  res.json({
-    id: userData.id,
-    username: userData.username,
-    totalScore: parseInt(userData.totalScore) || 0,
-    quizzesCompleted: parseInt(userData.quizzesCompleted) || 0
-  });
+  try {
+    const chapter = await client.createChapter(name, description);
+    res.json(chapter);
+  } catch (error) {
+    console.error('Error creating chapter:', error);
+    res.status(500).json({ error: 'Failed to create chapter' });
+  }
+});
+
+app.post('/api/admin/chapter/:chapterId/questions', upload.single('questionsFile'), async (req, res) => {
+  const { chapterId } = req.params;
+  let { questions } = req.body;
+  
+  try {
+    // If file is uploaded, parse it
+    if (req.file) {
+      const fs = require('fs');
+      const fileContent = fs.readFileSync(req.file.path, 'utf8');
+      questions = JSON.parse(fileContent);
+      fs.unlinkSync(req.file.path); // Clean up uploaded file
+    } else if (typeof questions === 'string') {
+      questions = JSON.parse(questions);
+    }
+    
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({ error: 'Questions must be an array' });
+    }
+    
+    const addedQuestions = await client.addQuestionsToChapter(chapterId, questions);
+    res.json({ message: `Added ${addedQuestions.length} questions to chapter`, questions: addedQuestions });
+  } catch (error) {
+    console.error('Error adding questions:', error);
+    res.status(500).json({ error: 'Failed to add questions to chapter' });
+  }
 });
 
 app.get('/', (req, res) => {

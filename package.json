@@ -8,15 +8,24 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
+    "@supabase/supabase-js": "^2.39.0",
     "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"
   },
-  "keywords": ["quiz", "redis", "express", "nodejs"],
+  "keywords": [
+    "quiz",
+    "redis",
+    "express",
+    "nodejs"
+  ],
   "author": "",
   "license": "ISC"
 }

@@ -111,6 +111,27 @@
         .nav-button {
             margin: 10px 5px;
         }
+        .chapter-card {
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .chapter-card:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+            transform: translateY(-2px);
+        }
+        .chapter-card h3 {
+            margin: 0 0 10px 0;
+            color: #007bff;
+        }
+        .chapter-card p {
+            margin: 0;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -124,14 +145,25 @@
                 <input type="text" id="username" placeholder="Your username">
             </div>
             <button onclick="registerUser()">Start Quiz</button>
-            <button onclick="showLeaderboard()" class="nav-button">View Leaderboard</button>
+            <button onclick="showGlobalLeaderboard()" class="nav-button">View Global Leaderboard</button>
+        </div>
+        
+        <!-- Chapter Selection Screen -->
+        <div id="chapterScreen" class="screen">
+            <h2 id="chapterWelcome"></h2>
+            <p>Select a chapter to start:</p>
+            <div id="chaptersContainer"></div>
+            <button onclick="showGlobalLeaderboard()" class="nav-button">View Global Leaderboard</button>
+            <button onclick="goToLogin()" class="nav-button">Change User</button>
         </div>
         
         <!-- Quiz Screen -->
         <div id="quizScreen" class="screen">
             <h2 id="userWelcome"></h2>
+            <h3 id="chapterTitle"></h3>
             <div id="questionsContainer"></div>
             <button onclick="submitQuiz()">Submit Quiz</button>
+            <button onclick="backToChapterSelection()" class="nav-button">Back to Chapters</button>
         </div>
         
         <!-- Results Screen -->
@@ -139,20 +171,24 @@
             <h2>Quiz Results</h2>
             <div class="score" id="scoreDisplay"></div>
             <div id="resultsContainer"></div>
-            <button onclick="goToLogin()" class="nav-button">Take Another Quiz</button>
-            <button onclick="showLeaderboard()" class="nav-button">View Leaderboard</button>
+            <button onclick="backToChapterSelection()" class="nav-button">Try Another Chapter</button>
+            <button onclick="showChapterLeaderboard()" class="nav-button">Chapter Leaderboard</button>
+            <button onclick="showGlobalLeaderboard()" class="nav-button">Global Leaderboard</button>
         </div>
         
         <!-- Leaderboard Screen -->
         <div id="leaderboardScreen" class="screen">
-            <h2>Leaderboard</h2>
+            <h2 id="leaderboardTitle">Leaderboard</h2>
             <div id="leaderboardContainer"></div>
-            <button onclick="goToLogin()" class="nav-button">Back to Quiz</button>
+            <button onclick="backToChapterSelection()" class="nav-button">Back to Chapters</button>
+            <button onclick="showGlobalLeaderboard()" class="nav-button">Global Leaderboard</button>
         </div>
     </div>
 
     <script>
         let currentUser = null;
+        let currentChapter = null;
+        let chapters = [];
         let questions = [];
         let userAnswers = {};
 
@@ -161,6 +197,17 @@
                 screen.classList.remove('active');
             });
             document.getElementById(screenId).classList.add('active');
+        }
+
+        async function loadChapters() {
+            try {
+                const response = await fetch('/api/chapters');
+                chapters = await response.json();
+                return chapters;
+            } catch (error) {
+                console.error('Error loading chapters:', error);
+                return [];
+            }
         }
 
         async function registerUser() {
@@ -184,8 +231,8 @@
                 
                 if (response.ok) {
                     currentUser = data;
-                    await loadQuestions();
-                    showQuizScreen();
+                    await loadChapters();
+                    showChapterSelection();
                 } else {
                     alert(data.error || 'Registration failed');
                 }
@@ -194,9 +241,35 @@
             }
         }
 
-        async function loadQuestions() {
+        function showChapterSelection() {
+            document.getElementById('chapterWelcome').textContent = `Welcome, ${currentUser.username}!`;
+            
+            const container = document.getElementById('chaptersContainer');
+            container.innerHTML = '';
+            
+            chapters.forEach(chapter => {
+                const chapterDiv = document.createElement('div');
+                chapterDiv.className = 'chapter-card';
+                chapterDiv.onclick = () => selectChapter(chapter);
+                chapterDiv.innerHTML = `
+                    <h3>${chapter.name}</h3>
+                    <p>${chapter.description || 'No description available'}</p>
+                `;
+                container.appendChild(chapterDiv);
+            });
+            
+            showScreen('chapterScreen');
+        }
+
+        async function selectChapter(chapter) {
+            currentChapter = chapter;
+            await loadQuestions(chapter.id);
+            showQuizScreen();
+        }
+
+        async function loadQuestions(chapterId) {
             try {
-                const response = await fetch('/api/questions');
+                const response = await fetch(`/api/questions/${chapterId}`);
                 questions = await response.json();
             } catch (error) {
                 alert('Error loading questions: ' + error.message);
@@ -205,6 +278,7 @@
 
         function showQuizScreen() {
             document.getElementById('userWelcome').textContent = `Welcome, ${currentUser.username}!`;
+            document.getElementById('chapterTitle').textContent = currentChapter.name;
             
             const container = document.getElementById('questionsContainer');
             container.innerHTML = '';
@@ -227,6 +301,10 @@
             });
             
             showScreen('quizScreen');
+        }
+
+        function backToChapterSelection() {
+            showChapterSelection();
         }
 
         async function submitQuiz() {
@@ -252,6 +330,7 @@
                     },
                     body: JSON.stringify({
                         userId: currentUser.userId,
+                        chapterId: currentChapter.id,
                         answers: userAnswers
                     })
                 });
@@ -289,10 +368,17 @@
             showScreen('resultsScreen');
         }
 
-        async function showLeaderboard() {
+        async function showChapterLeaderboard() {
+            if (!currentChapter) {
+                alert('No chapter selected');
+                return;
+            }
+            
             try {
-                const response = await fetch('/api/leaderboard');
+                const response = await fetch(`/api/leaderboard/chapter/${currentChapter.id}`);
                 const leaderboard = await response.json();
+                
+                document.getElementById('leaderboardTitle').textContent = `${currentChapter.name} - Leaderboard`;
                 
                 const container = document.getElementById('leaderboardContainer');
                 container.innerHTML = `
@@ -303,8 +389,8 @@
                                     <th>Rank</th>
                                     <th>Username</th>
                                     <th>Total Score</th>
-                                    <th>Quizzes Completed</th>
-                                    <th>Average Score</th>
+                                    <th>Attempts</th>
+                                    <th>Average %</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -312,9 +398,9 @@
                                     <tr>
                                         <td>${index + 1}</td>
                                         <td>${user.username}</td>
-                                        <td>${user.totalScore}</td>
-                                        <td>${user.quizzesCompleted}</td>
-                                        <td>${user.averageScore}</td>
+                                        <td>${user.total_score}</td>
+                                        <td>${user.attempts_count}</td>
+                                        <td>${Math.round(user.average_percentage)}%</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -324,13 +410,57 @@
                 
                 showScreen('leaderboardScreen');
             } catch (error) {
-                alert('Error loading leaderboard: ' + error.message);
+                alert('Error loading chapter leaderboard: ' + error.message);
+            }
+        }
+
+        async function showGlobalLeaderboard() {
+            try {
+                const response = await fetch('/api/leaderboard/global');
+                const leaderboard = await response.json();
+                
+                document.getElementById('leaderboardTitle').textContent = 'Global Leaderboard';
+                
+                const container = document.getElementById('leaderboardContainer');
+                container.innerHTML = `
+                    <div class="leaderboard">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Username</th>
+                                    <th>Total Score</th>
+                                    <th>Total Attempts</th>
+                                    <th>Chapters</th>
+                                    <th>Overall Avg %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${leaderboard.map((user, index) => `
+                                    <tr>
+                                        <td>${index + 1}</td>
+                                        <td>${user.username}</td>
+                                        <td>${user.total_score}</td>
+                                        <td>${user.total_attempts}</td>
+                                        <td>${user.chapters_completed}</td>
+                                        <td>${Math.round(user.overall_average)}%</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                showScreen('leaderboardScreen');
+            } catch (error) {
+                alert('Error loading global leaderboard: ' + error.message);
             }
         }
 
         function goToLogin() {
             document.getElementById('username').value = '';
             currentUser = null;
+            currentChapter = null;
             userAnswers = {};
             showScreen('loginScreen');
         }
