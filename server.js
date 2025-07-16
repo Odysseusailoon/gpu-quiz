@@ -357,7 +357,9 @@ app.get('/api/user/:userId', async (req, res) => {
 });
 
 // Admin endpoints for creating chapters and uploading quizzes
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ 
+  storage: multer.memoryStorage()
+});
 
 app.post('/api/admin/chapter', async (req, res) => {
   const { name, description } = req.body;
@@ -382,10 +384,8 @@ app.post('/api/admin/chapter/:chapterId/questions', upload.single('questionsFile
   try {
     // If file is uploaded, parse it
     if (req.file) {
-      const fs = require('fs');
-      const fileContent = fs.readFileSync(req.file.path, 'utf8');
+      const fileContent = req.file.buffer.toString('utf8');
       questions = JSON.parse(fileContent);
-      fs.unlinkSync(req.file.path); // Clean up uploaded file
     } else if (typeof questions === 'string') {
       questions = JSON.parse(questions);
     }
